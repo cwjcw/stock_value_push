@@ -7,7 +7,7 @@ from datetime import datetime
 from stock import STOCKS
 from project import SEND_KEY, CHECK_INTERVAL_MINUTES
 
-# 保存已提醒记录（如 'sh600519_buy'）
+# 防止重复提醒
 notified_today = set()
 last_reset_date = datetime.now().date()
 
@@ -19,15 +19,18 @@ def reset_daily_notifications():
         last_reset_date = today
         print(f"[重置] 清空提醒记录：{today}")
 
-def get_stock_price(stock_code: str) -> float:
-    url = f"http://hq.sinajs.cn/list={stock_code}"
-    response = requests.get(url)
-    response.encoding = 'gbk'
-    data = response.text
+def get_price_from_tx(stock_code: str) -> float:
+    url = f"https://qt.gtimg.cn/q={stock_code}"
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
     try:
-        fields = data.split(",")
-        price = float(fields[3])  # 当前价是第4项
-        return price
+        response = requests.get(url, headers=headers, timeout=10)
+        response.encoding = 'utf-8'
+        data = response.text
+        fields = data.split("~")
+        current_price = float(fields[3])  # 当前价
+        return current_price
     except Exception as e:
         print(f"[错误] 获取 {stock_code} 价格失败: {e}")
         return -1
@@ -42,10 +45,9 @@ def send_wechat_notification(title: str, content: str):
         print(f"[错误] 推送失败: {e}")
 
 def check_all_prices():
-    reset_daily_notifications()  # 每次都检查是否需要清空记录
-
+    reset_daily_notifications()
     for code, limits in STOCKS.items():
-        current_price = get_stock_price(code)
+        current_price = get_price_from_tx(code)
         if current_price <= 0:
             continue
 
@@ -71,10 +73,10 @@ def check_all_prices():
                 )
                 notified_today.add(key)
 
-# 定时执行
+# 定时运行
 schedule.every(CHECK_INTERVAL_MINUTES).minutes.do(check_all_prices)
 
-print(f"[启动] 开始监控...每 {CHECK_INTERVAL_MINUTES} 分钟检查一次")
+print(f"[启动] 使用腾讯财经监控中... 每 {CHECK_INTERVAL_MINUTES} 分钟检查一次")
 while True:
     schedule.run_pending()
     time.sleep(1)
